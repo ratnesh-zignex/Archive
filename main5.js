@@ -1,22 +1,33 @@
 import { Vector as VectorSource } from "ol/source";
 import { Vector as VectorLayer } from "ol/layer";
 import WebGLPointsLayerRenderer from "ol/renderer/webgl/PointsLayer";
-import * as _ from "ol/webgl/ShaderBuilder";
+import { ShaderBuilder } from "ol/webgl/ShaderBuilder";
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
+import Map from "ol/Map";
+import View from "ol/View";
 
 class CustomWebGLRenderer extends WebGLPointsLayerRenderer {
   constructor(layer) {
-    const shaderBuilder = new _.ShaderBuilder();
-    // Define vertex attributes
+    const shaderBuilder = new ShaderBuilder();
+
+    // Define attributes
     shaderBuilder.addAttribute("vec2", "a_position");
     shaderBuilder.addAttribute("float", "a_size");
     shaderBuilder.addAttribute("float", "a_index");
+    shaderBuilder.addVarying("vec4", "v_color");
 
+    // Set symbol size and color expressions
+    shaderBuilder.setSymbolSizeExpression("vec2(10.0, 10.0)"); // Example size
+    shaderBuilder.setSymbolColorExpression("vec4(0.0, 0.5, 1.0, 1.0)"); // Example color
+
+    // Define vertex shader
     shaderBuilder.addVertexShaderFunction(`
       attribute vec2 a_position;
       attribute float a_size;
       attribute float a_index;
+
+      varying float v_index;
 
       void main() {
         vec2 offset = vec2(
@@ -27,37 +38,45 @@ class CustomWebGLRenderer extends WebGLPointsLayerRenderer {
       }
     `);
 
-    shaderBuilder.addVertexShaderFunction(`
+    // Define fragment shader
+    shaderBuilder.addFragmentShaderFunction(`
       precision mediump float;
-
-      void main() {
-        gl_FragColor = vec4(0.0, 0.5, 1.0, 1.0); // Blue color
+    varying float v_index; // Receive index from vertex shader
+      void main(void) {
+      vec4 color = vec4(0.0, 0.5, 1.0, 1.0); // Default color
+        if (v_index == 0.0) {
+          color = vec4(1.0, 0.0, 0.0, 1.0); // Red for the first point
+        } else {
+          color = vec4(0.0, 1.0, 0.0, 1.0); // Green for the second point
+        }
+      gl_FragColor = color;
       }
     `);
+
+    // Log the generated shaders for debugging
+    console.log(shaderBuilder.getSymbolVertexShader());
+    console.log(shaderBuilder.getSymbolFragmentShader());
 
     // Pass the shader builder to the parent class
     super(layer, { shaderBuilder });
   }
 }
 
-// Define a custom layer that uses the custom renderer
 class CustomWebGLLayer extends VectorLayer {
   createRenderer() {
     return new CustomWebGLRenderer(this);
   }
 }
 
-// Define data source and add a point feature
+// Define data source and add point features
 const source = new VectorSource();
-source.addFeature(new Feature(new Point([0, 0])));
+source.addFeature(new Feature(new Point([0, 0]))); // First point
+source.addFeature(new Feature(new Point([0, 0]))); // Second point
 
 // Create the custom WebGL layer
 const layer = new CustomWebGLLayer({ source });
 
-// Add layer to the map
-import Map from "ol/Map";
-import View from "ol/View";
-
+// Create the map
 const map = new Map({
   target: "map",
   layers: [layer],
@@ -66,3 +85,9 @@ const map = new Map({
     zoom: 4,
   }),
 });
+
+// Distinguish the two points visually
+// You can set different properties on the features to distinguish them
+const features = source.getFeatures();
+features[0].setProperties({ a_index: 0 }); // First point
+features[1].setProperties({ a_index: 1 }); // Second point
